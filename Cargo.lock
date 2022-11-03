@@ -685,6 +685,7 @@ dependencies = [
  "refinery",
  "rust_decimal",
  "sha2",
+ "streaming-iterator",
  "time",
 ]
 
@@ -764,6 +765,12 @@ dependencies = [
  "libc",
  "winapi",
 ]
+
+[[package]]
+name = "streaming-iterator"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d55dd09aaa2f85ef8767cc9177294d63c30d62c8533329e75aa51d8b94976e22"
 
 [[package]]
 name = "stringprep"

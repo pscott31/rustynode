@@ -2,7 +2,7 @@ use postgres::types::{ToSql, Type, IsNull, to_sql_checked};
 use bytes::BytesMut;
 use std::error::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct HexID {
     data: [u8; 32]
 }

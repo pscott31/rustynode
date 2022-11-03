@@ -1,32 +1,49 @@
+use std::str::FromStr;
+use std::time::SystemTime;
+
 use crate::hex_id::HexID;
 use crate::protos::events;
 use crate::protos::vega;
-
-use rust_decimal::prelude::*;
+use postgres::binary_copy::BinaryCopyInWriter;
+use postgres::types::ToSql;
 use sha2::{Digest, Sha256};
-// use std::string::String;
-use postgres::types::{ToSql};
+
+trait EventHandler {
+    fn handle_bus_event(&mut self, be: events::BusEvent) -> std::io::Result<()>;
+}
 
 fn sequence_number(be: &events::BusEvent) -> i32 {
     let (_block_height, seq) = be.id.split_once('-').unwrap();
     return seq.parse().unwrap();
 }
 
-pub struct Inserter {
+pub struct Inserter<'a> {
     conn: postgres::Client,
     tx_hash: HexID,
     vega_time: std::time::SystemTime,
     syn_time: std::time::SystemTime,
     le_time: std::time::SystemTime,
     seq: i32,
-    ledger_entries: Vec<Box<dyn ToSql>>,
+    ledger_entries: Vec<LedgerEntry>,
+    handlers: Vec<&'a dyn EventHandler>,
 }
 
 const NO_MARKET: &str = "!";
 const SYSTEM_OWNER: &str = "*";
 
-impl Inserter {
-    pub fn new(conn: postgres::Client) -> Inserter {
+struct LedgerEntry {
+    account_from_id: HexID,
+    account_to_id: HexID,
+    quantity: rust_decimal::Decimal,
+    type_: vega::TransferType,
+    ledger_entry_time: SystemTime,
+    transfer_time: SystemTime,
+    vega_time: SystemTime,
+    tx_hash: HexID,
+}
+
+impl<'a> Inserter<'a> {
+    pub fn new(conn: postgres::Client, handlers: Vec<&'a dyn EventHandler>) -> Inserter<'a> {
         return Inserter {
             conn: conn,
             tx_hash: HexID::from(""),
@@ -35,6 +52,7 @@ impl Inserter {
             syn_time: std::time::UNIX_EPOCH,
             seq: 0,
             ledger_entries: vec![],
+            handlers: handlers,
         };
     }
 
@@ -53,11 +71,92 @@ impl Inserter {
     }
 
     fn handle_time_update(&mut self, e: events::TimeUpdate) -> std::io::Result<()> {
-        // TODO: round to microseconds
         self.vega_time =
             std::time::UNIX_EPOCH + std::time::Duration::from_nanos(e.timestamp as u64);
         self.le_time = self.vega_time;
+        self.write_ledger_entries();
         Ok(())
+    }
+
+    fn write_ledger_entries(&mut self) {
+        let vals = vec![
+            String::from("TRANSFER_TYPE_UNSPECIFIED"),
+            String::from("TRANSFER_TYPE_LOSS"),
+            String::from("TRANSFER_TYPE_WIN"),
+            String::from("TRANSFER_TYPE_CLOSE"),
+            String::from("TRANSFER_TYPE_MTM_LOSS"),
+            String::from("TRANSFER_TYPE_MTM_WIN"),
+            String::from("TRANSFER_TYPE_MARGIN_LOW"),
+            String::from("TRANSFER_TYPE_MARGIN_HIGH"),
+            String::from("TRANSFER_TYPE_MARGIN_CONFISCATED"),
+            String::from("TRANSFER_TYPE_MAKER_FEE_PAY"),
+            String::from("TRANSFER_TYPE_MAKER_FEE_RECEIVE"),
+            String::from("TRANSFER_TYPE_INFRASTRUCTURE_FEE_PAY"),
+            String::from("TRANSFER_TYPE_INFRASTRUCTURE_FEE_DISTRIBUTE"),
+            String::from("TRANSFER_TYPE_LIQUIDITY_FEE_PAY"),
+            String::from("TRANSFER_TYPE_LIQUIDITY_FEE_DISTRIBUTE"),
+            String::from("TRANSFER_TYPE_BOND_LOW"),
+            String::from("TRANSFER_TYPE_BOND_HIGH"),
+            String::from("TRANSFER_TYPE_WITHDRAW_LOCK"),
+            String::from("TRANSFER_TYPE_WITHDRAW"),
+            String::from("TRANSFER_TYPE_DEPOSIT"),
+            String::from("TRANSFER_TYPE_BOND_SLASHING"),
+            String::from("TRANSFER_TYPE_STAKE_REWARD"),
+            String::from("TRANSFER_TYPE_TRANSFER_FUNDS_SEND"),
+            String::from("TRANSFER_TYPE_TRANSFER_FUNDS_DISTRIBUTE"),
+            String::from("TRANSFER_TYPE_CLEAR_ACCOUNT"),
+            String::from("TRANSFER_TYPE_CHECKPOINT_BALANCE_RESTORE"),
+        ];
+        let kind = postgres::types::Kind::Enum(vals);
+        let mytype = postgres::types::Type::new(
+            String::from("transfer_type"),
+            0,
+            kind,
+            String::from("public"),
+        );
+
+        let writer = self
+            .conn
+            .copy_in(
+                "COPY ledger(
+            account_from_id,
+            account_to_id,
+            quantity,
+            type,
+            ledger_entry_time,
+            transfer_time,
+            vega_time,
+            tx_hash) FROM STDIN (FORMAT binary)",
+            )
+            .unwrap();
+        let types = [
+            postgres::types::Type::BYTEA,
+            postgres::types::Type::BYTEA,
+            postgres::types::Type::NUMERIC,
+            mytype,
+            postgres::types::Type::TIMESTAMPTZ,
+            postgres::types::Type::TIMESTAMPTZ,
+            postgres::types::Type::TIMESTAMPTZ,
+            postgres::types::Type::BYTEA,
+        ];
+
+        let mut bwriter = BinaryCopyInWriter::new(writer, &types);
+
+        for le in self.ledger_entries.iter() {
+            let row: [&(dyn ToSql + Sync); 8] = [
+                &le.account_from_id,
+                &le.account_to_id,
+                &le.quantity,
+                &le.type_,
+                &le.ledger_entry_time,
+                &le.transfer_time,
+                &le.vega_time,
+                &le.tx_hash,
+            ];
+            bwriter.write(&row).unwrap()
+        }
+        let _copied = bwriter.finish().unwrap();
+        self.ledger_entries.clear();
     }
 
     fn handle_ledger_movements(&mut self, e: events::LedgerMovements) -> std::io::Result<()> {
@@ -71,32 +170,20 @@ impl Inserter {
                 let ts =
                     std::time::UNIX_EPOCH + std::time::Duration::from_nanos(le.timestamp as u64);
                 let qty = rust_decimal::Decimal::from_str(&le.amount).unwrap();
-   
-                self.ledger_entries.push(Box::new(self.le_time.clone()));
-                // self.ledger_entries.push(Box::new(&self.get_account_id((&le).from_account.as_ref().unwrap())));
-                // self.ledger_entries.push(Box::new(&self.get_account_id((&le).to_account.as_ref().unwrap())));
-                // self.ledger_entries.push(Box::new(&qty));
-                // self.ledger_entries.push(Box::new(&self.tx_hash));
-                // self.ledger_entries.push(Box::new(&self.vega_time));
-                // self.ledger_entries.push(Box::new(&le.type_.unwrap()));
 
-                // let _res = self
-                //     .conn
-                //     .execute(
-                //         query,
-                //         &[
-                //             &self.le_time,
-                //             &self.get_account_id((&le).from_account.as_ref().unwrap()),
-                //             &self.get_account_id((&le).to_account.as_ref().unwrap()),
-                //             &qty,
-                //             &self.tx_hash,
-                //             &self.vega_time,
-                //             &ts,
-                //             &le.type_.unwrap(),
-                //         ],
-                //     )
-                //     .unwrap();
-                self.le_time = self.le_time + time::Duration::MICROSECOND
+                let obj = LedgerEntry {
+                    account_from_id: self.get_account_id((&le).from_account.as_ref().unwrap()),
+                    account_to_id: self.get_account_id((&le).to_account.as_ref().unwrap()),
+                    quantity: qty,
+                    type_: le.type_.unwrap(),
+                    ledger_entry_time: self.le_time,
+                    transfer_time: ts,
+                    vega_time: self.vega_time,
+                    tx_hash: self.tx_hash,
+                };
+
+                self.ledger_entries.push(obj);
+                self.le_time = self.le_time + time::Duration::MICROSECOND;
             }
         }
 

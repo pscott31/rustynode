@@ -20,6 +20,7 @@ protobuf = "3.2.0"
 refinery = { version = "0.8.6", features = ["postgres"] }
 rust_decimal = { version = "1.26.1", features = ["db-postgres"] }
 sha2 = "0.10.6"
+streaming-iterator = "0.1.8"
 time = "0.3.15"
 
 

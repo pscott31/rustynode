@@ -40,6 +40,7 @@ create table ledger
     tx_hash         BYTEA                    NOT NULL,
     vega_time       TIMESTAMP WITH TIME ZONE NOT NULL,
     transfer_time   TIMESTAMP WITH TIME ZONE NOT NULL,
-    type            transfer_type,
-    PRIMARY KEY(ledger_entry_time)
+    type            transfer_type
+	--,
+    -- PRIMARY KEY(ledger_entry_time)
 );
