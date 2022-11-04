@@ -8,8 +8,10 @@ edition = "2021"
 [build-dependencies]
 protobuf = "3.2.0"
 protobuf-codegen = "3.2.0"
+postgres-macros = {path="postgres-macros"}
 
 [dependencies]
+postgres-macros = {path="postgres-macros"}
 byteorder = "1.4.3"
 bytes = "1.2.1"
 hex = "0.4.3"

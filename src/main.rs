@@ -1,6 +1,7 @@
 mod event_handlers;
 mod hex_id;
 mod inserter;
+mod pgtypes;
 mod protos;
 mod utils;
 

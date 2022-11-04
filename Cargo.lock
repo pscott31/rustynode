@@ -443,6 +443,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "postgres-macros"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "postgres-protocol"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -679,6 +687,7 @@ dependencies = [
  "hex",
  "postgres",
  "postgres-derive",
+ "postgres-macros",
  "postgres-types",
  "protobuf",
  "protobuf-codegen",

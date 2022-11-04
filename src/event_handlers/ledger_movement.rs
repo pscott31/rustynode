@@ -6,7 +6,19 @@ use crate::utils::account_id_from_details;
 use postgres::binary_copy::BinaryCopyInWriter;
 use postgres::types::ToSql;
 use std::str::FromStr;
+use std::sync::Once;
 use std::time::SystemTime;
+
+use postgres_macros::*;
+
+//trait Badger<const N: usize> {
+trait Badger {
+    // fn hello_macro();
+    fn types(conn: &mut postgres::Client) -> &'static [postgres::types::Type];
+    // fn _types<const N: usize>(conn: &mut postgres::Client) -> [postgres::types::Type; N];
+}
+
+#[derive(Badger)]
 struct LedgerEntry {
     account_from_id: HexID,
     account_to_id: HexID,
@@ -18,21 +30,80 @@ struct LedgerEntry {
     tx_hash: HexID,
 }
 
+//impl<const N: usize> Badger<N> for LedgerEntry {
+// impl Badger for LedgerEntry {
+//     fn types(conn: &mut postgres::Client) -> &'static [postgres::types::Type] {
+//         static mut TYPES: Option<[postgres::types::Type; 8]> = None;
+//         static INIT: Once = Once::new();
+
+//         unsafe {
+//             INIT.call_once(|| {
+//                 let q = "SELECT * from ledger WHERE
+//                 account_from_id=$1 AND
+//                 account_to_id=$2 AND
+//                 quantity=$3 AND
+//                 type=$4 AND
+//                 ledger_entry_time=$5 AND
+//                 transfer_time=$6 AND
+//                 vega_time=$7 AND
+//                 tx_hash=$8;";
+//                 let stmt = conn.prepare(q).unwrap();
+//                 let params = stmt.params();
+//                 let types = [
+//                     params[0].clone(),
+//                     params[1].clone(),
+//                     params[2].clone(),
+//                     params[3].clone(),
+//                     params[4].clone(),
+//                     params[5].clone(),
+//                     params[6].clone(),
+//                     params[7].clone(),
+//                 ];
+
+//                 TYPES = Some(types);
+//             });
+//             TYPES.as_ref().unwrap()
+//         }
+//     }
+
+// fn _types<const N: usize>(conn: &mut postgres::Client) -> [postgres::types::Type; N] {
+//     let q = "SELECT * from ledger WHERE
+//                 account_from_id=$1 AND
+//                 account_to_id=$2 AND
+//                 quantity=$3 AND
+//                 type=$4 AND
+//                 ledger_entry_time=$5 AND
+//                 transfer_time=$6 AND
+//                 vega_time=$7 AND
+//                 tx_hash=$8;";
+//     let stmt = conn.prepare(q).unwrap();
+//     let params = stmt.params();
+//     let types = [
+//         params[0].clone(),
+//         params[1].clone(),
+//         params[2].clone(),
+//         params[3].clone(),
+//         params[4].clone(),
+//         params[5].clone(),
+//         params[6].clone(),
+//         params[7].clone(),
+//     ];
+//     types
+//  }
+//}
+
 pub struct LedgerEventHandler {
-    ledger_entries: Vec<LedgerEntry>,
-    pg_type: postgres::types::Type,
+    pending: Vec<LedgerEntry>,
 }
 
 impl LedgerEventHandler {
     pub fn new() -> LedgerEventHandler {
-        return LedgerEventHandler {
-            ledger_entries: vec![],
-            pg_type: generate_le_type(),
-        };
+        return LedgerEventHandler { pending: vec![] };
     }
 }
 
 impl EventHandler for LedgerEventHandler {
+    fn init(&mut self, _conn: &mut postgres::Client) {}
     fn handle(
         &mut self,
         ctx: &crate::event_handlers::InsertContext,
@@ -49,7 +120,7 @@ impl EventHandler for LedgerEventHandler {
                     std::time::UNIX_EPOCH + std::time::Duration::from_nanos(le.timestamp as u64);
                 let le_time = ctx.vega_time
                     + time::Duration::MICROSECOND
-                        .checked_mul(self.ledger_entries.len().try_into().unwrap())
+                        .checked_mul(self.pending.len().try_into().unwrap())
                         .unwrap();
                 let qty = rust_decimal::Decimal::from_str(&le.amount).unwrap();
                 let obj = LedgerEntry {
@@ -62,13 +133,15 @@ impl EventHandler for LedgerEventHandler {
                     vega_time: ctx.vega_time,
                     tx_hash: ctx.tx_hash,
                 };
-                self.ledger_entries.push(obj);
+                self.pending.push(obj);
             }
         }
         Ok(())
     }
 
     fn flush(&mut self, conn: &mut postgres::Client) {
+        let types = LedgerEntry::types(conn);
+
         let writer = conn
             .copy_in(
                 "
@@ -76,20 +149,21 @@ impl EventHandler for LedgerEventHandler {
                             transfer_time, vega_time, tx_hash) FROM STDIN (FORMAT binary)",
             )
             .unwrap();
-        let types = [
-            postgres::types::Type::BYTEA,
-            postgres::types::Type::BYTEA,
-            postgres::types::Type::NUMERIC,
-            self.pg_type.clone(),
-            postgres::types::Type::TIMESTAMPTZ,
-            postgres::types::Type::TIMESTAMPTZ,
-            postgres::types::Type::TIMESTAMPTZ,
-            postgres::types::Type::BYTEA,
-        ];
+        // TODO: get these types from PREPARE?
+        // let types = [
+        //     postgres::types::Type::BYTEA,
+        //     postgres::types::Type::BYTEA,
+        //     postgres::types::Type::NUMERIC,
+        //     self.pg_type.clone(),
+        //     postgres::types::Type::TIMESTAMPTZ,
+        //     postgres::types::Type::TIMESTAMPTZ,
+        //     postgres::types::Type::TIMESTAMPTZ,
+        //     postgres::types::Type::BYTEA,
+        // ];
 
-        let mut writer = BinaryCopyInWriter::new(writer, &types);
+        let mut writer = BinaryCopyInWriter::new(writer, types);
 
-        for le in self.ledger_entries.iter() {
+        for le in self.pending.iter() {
             let row: [&(dyn ToSql + Sync); 8] = [
                 &le.account_from_id,
                 &le.account_to_id,
@@ -103,44 +177,44 @@ impl EventHandler for LedgerEventHandler {
             writer.write(&row).unwrap()
         }
         let _copied = writer.finish().unwrap();
-        self.ledger_entries.clear();
+        self.pending.clear();
     }
 }
 
-fn generate_le_type() -> postgres::types::Type {
-    let vals = vec![
-        String::from("TRANSFER_TYPE_UNSPECIFIED"),
-        String::from("TRANSFER_TYPE_LOSS"),
-        String::from("TRANSFER_TYPE_WIN"),
-        String::from("TRANSFER_TYPE_CLOSE"),
-        String::from("TRANSFER_TYPE_MTM_LOSS"),
-        String::from("TRANSFER_TYPE_MTM_WIN"),
-        String::from("TRANSFER_TYPE_MARGIN_LOW"),
-        String::from("TRANSFER_TYPE_MARGIN_HIGH"),
-        String::from("TRANSFER_TYPE_MARGIN_CONFISCATED"),
-        String::from("TRANSFER_TYPE_MAKER_FEE_PAY"),
-        String::from("TRANSFER_TYPE_MAKER_FEE_RECEIVE"),
-        String::from("TRANSFER_TYPE_INFRASTRUCTURE_FEE_PAY"),
-        String::from("TRANSFER_TYPE_INFRASTRUCTURE_FEE_DISTRIBUTE"),
-        String::from("TRANSFER_TYPE_LIQUIDITY_FEE_PAY"),
-        String::from("TRANSFER_TYPE_LIQUIDITY_FEE_DISTRIBUTE"),
-        String::from("TRANSFER_TYPE_BOND_LOW"),
-        String::from("TRANSFER_TYPE_BOND_HIGH"),
-        String::from("TRANSFER_TYPE_WITHDRAW_LOCK"),
-        String::from("TRANSFER_TYPE_WITHDRAW"),
-        String::from("TRANSFER_TYPE_DEPOSIT"),
-        String::from("TRANSFER_TYPE_BOND_SLASHING"),
-        String::from("TRANSFER_TYPE_STAKE_REWARD"),
-        String::from("TRANSFER_TYPE_TRANSFER_FUNDS_SEND"),
-        String::from("TRANSFER_TYPE_TRANSFER_FUNDS_DISTRIBUTE"),
-        String::from("TRANSFER_TYPE_CLEAR_ACCOUNT"),
-        String::from("TRANSFER_TYPE_CHECKPOINT_BALANCE_RESTORE"),
-    ];
-    let kind = postgres::types::Kind::Enum(vals);
-    postgres::types::Type::new(
-        String::from("transfer_type"),
-        0,
-        kind,
-        String::from("public"),
-    )
-}
+// fn generate_le_type() -> postgres::types::Type {
+//     let vals = vec![
+//         String::from("TRANSFER_TYPE_UNSPECIFIED"),
+//         String::from("TRANSFER_TYPE_LOSS"),
+//         String::from("TRANSFER_TYPE_WIN"),
+//         String::from("TRANSFER_TYPE_CLOSE"),
+//         String::from("TRANSFER_TYPE_MTM_LOSS"),
+//         String::from("TRANSFER_TYPE_MTM_WIN"),
+//         String::from("TRANSFER_TYPE_MARGIN_LOW"),
+//         String::from("TRANSFER_TYPE_MARGIN_HIGH"),
+//         String::from("TRANSFER_TYPE_MARGIN_CONFISCATED"),
+//         String::from("TRANSFER_TYPE_MAKER_FEE_PAY"),
+//         String::from("TRANSFER_TYPE_MAKER_FEE_RECEIVE"),
+//         String::from("TRANSFER_TYPE_INFRASTRUCTURE_FEE_PAY"),
+//         String::from("TRANSFER_TYPE_INFRASTRUCTURE_FEE_DISTRIBUTE"),
+//         String::from("TRANSFER_TYPE_LIQUIDITY_FEE_PAY"),
+//         String::from("TRANSFER_TYPE_LIQUIDITY_FEE_DISTRIBUTE"),
+//         String::from("TRANSFER_TYPE_BOND_LOW"),
+//         String::from("TRANSFER_TYPE_BOND_HIGH"),
+//         String::from("TRANSFER_TYPE_WITHDRAW_LOCK"),
+//         String::from("TRANSFER_TYPE_WITHDRAW"),
+//         String::from("TRANSFER_TYPE_DEPOSIT"),
+//         String::from("TRANSFER_TYPE_BOND_SLASHING"),
+//         String::from("TRANSFER_TYPE_STAKE_REWARD"),
+//         String::from("TRANSFER_TYPE_TRANSFER_FUNDS_SEND"),
+//         String::from("TRANSFER_TYPE_TRANSFER_FUNDS_DISTRIBUTE"),
+//         String::from("TRANSFER_TYPE_CLEAR_ACCOUNT"),
+//         String::from("TRANSFER_TYPE_CHECKPOINT_BALANCE_RESTORE"),
+//     ];
+//     let kind = postgres::types::Kind::Enum(vals);
+//     postgres::types::Type::new(
+//         String::from("transfer_type"),
+//         0,
+//         kind,
+//         String::from("public"),
+//     )
+// }
