@@ -10,37 +10,39 @@ pub fn hello_macro_derive(input: TokenStream) -> TokenStream {
 
 fn impl_hello_macro(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
-    // println!("Wrapping {name}");
+    let field_names = match &ast.data {
+        syn::Data::Struct(syn::DataStruct {
+            fields: syn::Fields::Named(ref fields),
+            ..
+        }) => fields
+            .named
+            .iter()
+            .map(|f| f.ident.as_ref().unwrap().to_string())
+            .collect::<Vec<String>>(),
+        _ => {
+            panic!("can only use on structs")
+        }
+    };
+
+    let table_name = name.to_string();
+    let arse = field_names.iter().enumerate();
+    let cake = arse.map(|(i, field_name)| format!("{field_name}=${}", i + 1));
+    let dandy: Vec<String> = cake.collect();
+    let n_cols = dandy.len();
+    let col_iter = 0..(n_cols);
+    let selecta = dandy.join(" AND ");
 
     let gen = quote! {
         impl Badger for #name {
             fn types(conn: &mut postgres::Client) -> &'static [postgres::types::Type] {
-                // println!("badger time: {}", #name)
-                static mut TYPES: Option<[postgres::types::Type; 8]> = None;
+                static mut TYPES: Option<[postgres::types::Type; #n_cols]> = None;
                 static INIT: Once = Once::new();
                 unsafe {
                     INIT.call_once(|| {
-                        let q = "SELECT * from ledger WHERE
-                        account_from_id=$1 AND
-                        account_to_id=$2 AND
-                        quantity=$3 AND
-                        type=$4 AND
-                        ledger_entry_time=$5 AND
-                        transfer_time=$6 AND
-                        vega_time=$7 AND
-                        tx_hash=$8;";
-                        let stmt = conn.prepare(q).unwrap();
+                        let q = format!("SELECT * from {} WHERE {}", #table_name, #selecta);
+                        let stmt = conn.prepare(q.as_str()).unwrap();
                         let params = stmt.params();
-                        let types = [
-                            params[0].clone(),
-                            params[1].clone(),
-                            params[2].clone(),
-                            params[3].clone(),
-                            params[4].clone(),
-                            params[5].clone(),
-                            params[6].clone(),
-                            params[7].clone(),
-                        ];
+                        let types = [ #(params[#col_iter].clone(),)*];
 
                         TYPES = Some(types);
                     });

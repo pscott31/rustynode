@@ -19,7 +19,7 @@ trait Badger {
 }
 
 #[derive(Badger)]
-struct LedgerEntry {
+struct Ledger {
     account_from_id: HexID,
     account_to_id: HexID,
     quantity: rust_decimal::Decimal,
@@ -93,7 +93,7 @@ struct LedgerEntry {
 //}
 
 pub struct LedgerEventHandler {
-    pending: Vec<LedgerEntry>,
+    pending: Vec<Ledger>,
 }
 
 impl LedgerEventHandler {
@@ -123,7 +123,7 @@ impl EventHandler for LedgerEventHandler {
                         .checked_mul(self.pending.len().try_into().unwrap())
                         .unwrap();
                 let qty = rust_decimal::Decimal::from_str(&le.amount).unwrap();
-                let obj = LedgerEntry {
+                let obj = Ledger {
                     account_from_id: account_id_from_details((le).from_account.as_ref().unwrap()),
                     account_to_id: account_id_from_details((le).to_account.as_ref().unwrap()),
                     quantity: qty,
@@ -140,7 +140,7 @@ impl EventHandler for LedgerEventHandler {
     }
 
     fn flush(&mut self, conn: &mut postgres::Client) {
-        let types = LedgerEntry::types(conn);
+        let types = Ledger::types(conn);
 
         let writer = conn
             .copy_in(

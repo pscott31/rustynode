@@ -43,7 +43,7 @@ fn main() -> Result<()> {
     let mut inserter = inserter::Inserter::new(conn, handlers);
 
     //let f = File::open("/home/scotty/work/testnet-2022-10-20.evt")?;
-    let f = File::open("/home/scotty/work/testnet-2022-10-20.evt")?;
+    let f = File::open("/Users/philipscott/Downloads/eventlog.evt")?;
     let mut reader = BufReader::new(f);
     while let Ok(be) = next_event(&mut reader) {
         match inserter.handle_bus_event(&be) {
