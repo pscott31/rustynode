@@ -40,7 +40,7 @@ impl InsertContext {
             self.vega_time = UNIX_EPOCH + Duration::from_nanos(tu.timestamp as u64);
             self.syn_time = self.vega_time;
 
-            if self.height > 100 {
+            if self.height > 1000 {
                 println!("stopping");
                 process::exit(0);
             }
