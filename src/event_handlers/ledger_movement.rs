@@ -3,40 +3,13 @@ use crate::hex_id::HexID;
 use crate::protos::events;
 use crate::protos::vega;
 use crate::utils::account_id_from_details;
-use postgres::binary_copy::BinaryCopyInWriter;
-use postgres::types::ToSql;
 use std::str::FromStr;
 use std::time::SystemTime;
 
-use postgres_macros::*;
+use postgres_macros::{PgCopyIn, PgTypes};
+use postgres_macros_derive::{PgCopyIn, PgTypes};
 
-trait PgTypes {
-    fn types(conn: &mut postgres::Client) -> &'static [postgres::types::Type];
-}
-
-trait PgCopyIn {
-    type Dave<'a>
-    where
-        Self: 'a;
-    fn copy_in<'a, I>(items: I, conn: &mut postgres::Client) -> Result<u64, postgres::Error>
-    where
-        I: IntoIterator<Item = &'a Self::Dave<'a>>;
-}
-
-impl PgCopyIn for Ledger {
-    type Dave = Ledger;
-    fn copy_in<'a, I>(items: I, conn: &mut postgres::Client) -> Result<u64, postgres::Error>
-    where
-        I: IntoIterator<Item = Self::Dave<'a>>,
-    {
-        for i in items.into_iter() {
-            println!("{:?}", i)
-        }
-        Ok(0)
-    }
-}
-// #[derive(PgTypes, PgCopyIn)]
-#[derive(Debug, PgTypes)]
+#[derive(Debug, PgTypes, PgCopyIn)]
 struct Ledger {
     account_from_id: HexID,
     account_to_id: HexID,
@@ -97,33 +70,8 @@ impl EventHandler for LedgerEventHandler {
     }
 
     fn flush(&mut self, conn: &mut postgres::Client) {
-        // let types = Ledger::types(conn);
-
-        // let writer = conn
-        //     .copy_in(
-        //         "
-        //         COPY ledger( account_from_id, account_to_id, quantity, type, ledger_entry_time,
-        //                     transfer_time, vega_time, tx_hash) FROM STDIN (FORMAT binary)",
-        //     )
-        //     .unwrap();
-
-        // let mut writer = BinaryCopyInWriter::new(writer, types);
-
-        // for le in self.pending.iter() {
-        //     let row: [&(dyn ToSql + Sync); 8] = [
-        //         &le.account_from_id,
-        //         &le.account_to_id,
-        //         &le.quantity,
-        //         &le.type_,
-        //         &le.ledger_entry_time,
-        //         &le.transfer_time,
-        //         &le.vega_time,
-        //         &le.tx_hash,
-        //     ];
-        //     writer.write(&row).unwrap()
-        // }
-        // let _copied = writer.finish().unwrap();
-        Ledger::copy_in((&self.pending), conn);
+        let copied = Ledger::copy_in(&self.pending, conn).unwrap();
+        assert!(copied == self.pending.len() as u64);
         self.pending.clear();
     }
 }

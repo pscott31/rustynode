@@ -8,16 +8,18 @@ edition = "2021"
 [build-dependencies]
 protobuf = "3.2.0"
 protobuf-codegen = "3.2.0"
-postgres-macros = {path="postgres-macros"}
+postgres-macros-derive = {path="postgres-macros-derive"}
 
 [dependencies]
-postgres-macros = {path="postgres-macros"}
 byteorder = "1.4.3"
 bytes = "1.2.1"
 hex = "0.4.3"
 postgres = "0.19.4"
 postgres-derive = "0.4.3"
 postgres-types = { version = "0.2.4", features = ["array-impls"] }
+postgres-macros = {path="postgres-macros"}
+postgres-macros-derive = {path="postgres-macros-derive"}
+
 protobuf = "3.2.0"
 refinery = { version = "0.8.6", features = ["postgres"] }
 rust_decimal = { version = "1.26.1", features = ["db-postgres"] }
