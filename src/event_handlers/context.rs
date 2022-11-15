@@ -19,7 +19,7 @@ pub struct InsertContext {
 impl InsertContext {
     pub fn new() -> InsertContext {
         InsertContext {
-            tx_hash: HexID::from(""),
+            tx_hash: HexID::try_from("").unwrap(),
             vega_time: UNIX_EPOCH,
             syn_time: UNIX_EPOCH,
             seq: 0,
@@ -30,7 +30,7 @@ impl InsertContext {
     pub fn update_from_event(&mut self, be: &events::BusEvent) {
         (self.height, self.seq) = parse_id(be);
         self.syn_time = self.vega_time + time::Duration::MICROSECOND * self.seq;
-        self.tx_hash = HexID::from(be.tx_hash.as_str());
+        self.tx_hash = HexID::try_from(be.tx_hash.as_str()).unwrap();
 
         if let Some(Event::TimeUpdate(tu)) = be.event.as_ref() {
             if self.height % 10 == 0 {

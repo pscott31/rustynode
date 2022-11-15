@@ -4,12 +4,13 @@ mod inserter;
 mod protos;
 mod utils;
 
+use anyhow::{Context, Result};
 use byteorder::{BigEndian, ByteOrder};
 use protobuf::Message;
 use protos::events;
 use std::fs::File;
+use std::io::BufReader;
 use std::io::Read;
-use std::io::{BufReader, Result};
 
 fn next_event<T: Read>(reader: &mut T) -> Result<events::BusEvent> {
     let mut size_arr = [0u8; 4];
@@ -28,27 +29,42 @@ mod embedded {
     embed_migrations!();
 }
 
-fn delete_everything(conn: &mut postgres::Client) {
-    conn.execute("TRUNCATE TABLE ledger;", &[]).unwrap();
+fn truncate_table(table_name: &str, conn: &mut postgres::Client) -> Result<()> {
+    let q = format!("TRUNCATE TABLE {};", table_name);
+    conn.execute(q.as_str(), &[])?;
+    Ok(())
+}
+fn delete_everything(conn: &mut postgres::Client) -> Result<()> {
+    let tables = vec!["balances", "ledger"];
+    for table in tables {
+        truncate_table(table, conn).context(format!("unable to truncate {}", table))?;
+    }
+    Ok(())
 }
 fn main() -> Result<()> {
-    let mut conn =
-        postgres::Client::connect("postgresql://vega:vega@localhost", postgres::NoTls).unwrap();
-    embedded::migrations::runner().run(&mut conn).unwrap();
-    delete_everything(&mut conn);
+    let conn_str = "postgresql://vega:vega@localhost";
+    let mut conn = postgres::Client::connect(conn_str, postgres::NoTls)
+        .context(format!("connecting to db {conn_str}"))?;
+
+    embedded::migrations::runner()
+        .run(&mut conn)
+        .context("unable to migrate database schema")?;
+
+    delete_everything(&mut conn).context("unable to delete existing data")?;
+
     let mut le_handler = event_handlers::ledger_movement::LedgerEventHandler::new();
+    let mut ae_handler = event_handlers::account::AccountEventHandler::new();
     let rodger: &mut dyn event_handlers::EventHandler = &mut le_handler;
-    let handlers = &mut [rodger];
+    let handlers = &mut [rodger, &mut ae_handler];
     let mut inserter = inserter::Inserter::new(conn, handlers);
 
-    let f = File::open("/home/scotty/work/testnet-2022-10-20.evt")?;
-    //let f = File::open("/Users/philipscott/Downloads/eventlog.evt")?;
+    // let f = File::open("/home/scotty/work/testnet-2022-10-20.evt")?;
+    let f = File::open("/Users/philipscott/Downloads/eventlog.evt")?;
     let mut reader = BufReader::new(f);
     while let Ok(be) = next_event(&mut reader) {
-        match inserter.handle_bus_event(&be) {
-            Ok(_) => continue,
-            Err(e) => return Err(e),
-        }
+        inserter
+            .handle_bus_event(&be)
+            .with_context(|| format!("error handling event {}", be))?
     }
 
     Ok(())

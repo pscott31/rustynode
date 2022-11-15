@@ -3,6 +3,7 @@ use crate::hex_id::HexID;
 use crate::protos::events;
 use crate::protos::vega;
 use crate::utils::account_id_from_details;
+use anyhow::Result;
 use std::str::FromStr;
 use std::time::SystemTime;
 
@@ -39,7 +40,7 @@ impl EventHandler for LedgerEventHandler {
         ctx: &crate::event_handlers::InsertContext,
         _conn: &mut postgres::Client,
         e: &events::bus_event::Event,
-    ) -> std::io::Result<()> {
+    ) -> Result<()> {
         let events::bus_event::Event::LedgerMovements(e) = e else {
             return Ok(())
         };
@@ -69,9 +70,10 @@ impl EventHandler for LedgerEventHandler {
         Ok(())
     }
 
-    fn flush(&mut self, conn: &mut postgres::Client) {
+    fn flush(&mut self, conn: &mut postgres::Client) -> Result<()> {
         let copied = Ledger::copy_in(&self.pending, conn).unwrap();
         assert!(copied == self.pending.len() as u64);
         self.pending.clear();
+        Ok(())
     }
 }

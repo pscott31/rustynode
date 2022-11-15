@@ -40,7 +40,15 @@ create table ledger
     tx_hash         BYTEA                    NOT NULL,
     vega_time       TIMESTAMP WITH TIME ZONE NOT NULL,
     transfer_time   TIMESTAMP WITH TIME ZONE NOT NULL,
-    type            transfer_type
-	--,
-    -- PRIMARY KEY(ledger_entry_time)
+    type            transfer_type,
+    PRIMARY KEY(ledger_entry_time)
+);
+
+create table balances
+(
+    account_id bytea                      NOT NULL,
+    vega_time  TIMESTAMP WITH TIME ZONE NOT NULL,
+    tx_hash    BYTEA NOT NULL,
+    balance    HUGEINT           NOT NULL,
+    PRIMARY KEY(vega_time, account_id)
 );

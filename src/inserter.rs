@@ -2,6 +2,7 @@ use crate::event_handlers::handler::EventHandler;
 use crate::event_handlers::InsertContext;
 use crate::events::bus_event::Event;
 use crate::protos::events;
+use anyhow::{Result, Context};
 
 pub struct Inserter<'a> {
     pub conn: postgres::Client,
@@ -21,14 +22,13 @@ impl Inserter<'_> {
         };
     }
 
-    pub fn handle_bus_event(&mut self, be: &events::BusEvent) -> std::io::Result<()> {
+    pub fn handle_bus_event(&mut self, be: &events::BusEvent) -> anyhow::Result<()> {
         self.ctx.update_from_event(be);
         match be.event.as_ref() {
-            Option::Some(Event::TimeUpdate(_)) => self.flush(),
-            Option::None => Ok(()),
-            _ => Ok(()),
-        }
-        .unwrap();
+            Option::Some(Event::TimeUpdate(_)) => self.flush()?,
+            Option::None => (),
+            _ => (),
+        };
 
         if let Some(event) = be.event.as_ref() {
             for handler in self.handlers.iter_mut() {
@@ -38,9 +38,9 @@ impl Inserter<'_> {
         Ok(())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> Result<()> {
         for handler in self.handlers.iter_mut() {
-            handler.flush(&mut self.conn);
+            handler.flush(&mut self.conn).context(format!("error flushing block changes to database"))?;
         }
         Ok(())
     }

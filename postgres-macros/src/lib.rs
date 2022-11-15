@@ -3,6 +3,8 @@ pub trait PgTypes {
 }
 
 pub trait PgCopyIn {
-    type Item;
-    fn copy_in(items: &[Self::Item], conn: &mut postgres::Client) -> Result<u64, postgres::Error>;
+    type Item<'a>;
+    fn copy_in<'a, I>(items: I, conn: &mut postgres::Client) -> Result<u64, postgres::Error>
+    where
+        I: IntoIterator<Item = Self::Item<'a>>;
 }

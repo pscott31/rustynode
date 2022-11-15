@@ -65,7 +65,9 @@ pub fn pg_types_copy_in(input: TokenStream) -> TokenStream {
 
 fn impl_copy_in_macro(ast: &syn::DeriveInput) -> TokenStream {
     let name = &ast.ident;
-    let column_list = pg_column_names(ast).join(",");
+    let column_names = pg_column_names(ast);
+    let column_list = column_names.join(",");
+    let num_columns = column_names.len();
     let table_name = name.to_string();
 
     let syn::Data::Struct(syn::DataStruct{fields: syn::Fields::Named(ref fields), ..}) = ast.data else {
@@ -77,8 +79,13 @@ fn impl_copy_in_macro(ast: &syn::DeriveInput) -> TokenStream {
     let gen = quote! {
         use postgres::types::ToSql;
         impl PgCopyIn for #name {
-            type Item = #name;
-            fn copy_in(items: &[Self::Item], conn: &mut postgres::Client) ->  Result<u64, postgres::Error>
+            type Item<'a> = & 'a #name;
+            //fn copy_in<I>(items: I, conn: &mut postgres::Client) ->  Result<u64, postgres::Error>
+            // where I:IntoIterator,
+            // I::Item: Self::Item,
+            fn copy_in<'a, I>(items: I, conn: &mut postgres::Client) -> Result<u64, postgres::Error>
+    where
+        I: IntoIterator<Item = Self::Item<'a>>
             {
                 let types = #name::types(conn);
                 let q = format!("COPY {}({}) FROM STDIN (FORMAT binary)", #table_name, #column_list);
@@ -86,7 +93,7 @@ fn impl_copy_in_macro(ast: &syn::DeriveInput) -> TokenStream {
                 let mut writer = postgres::binary_copy::BinaryCopyInWriter::new(writer, types);
 
                 for item in items {
-                    let row: [&(dyn ToSql + Sync); 8] = [#(&item.#identifiers),*];
+                    let row: [&(dyn ToSql + Sync); #num_columns] = [#(&item.#identifiers),*];
                     writer.write(&row).unwrap()
                 }
                 writer.finish()
