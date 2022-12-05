@@ -1,12 +1,7 @@
-use crate::protos::events::bus_event::Event;
+use super::context::InsertContext;
+use crate::pending::Pending;
+use anyhow::Result;
 
 pub trait EventHandler {
-    fn init(&mut self, _conn: &mut postgres::Client) {}
-    fn handle(
-        &mut self,
-        ctx: &crate::event_handlers::context::InsertContext,
-        conn: &mut postgres::Client,
-        be: &Event,
-    ) -> anyhow::Result<()>;
-    fn flush(&mut self, conn: &mut postgres::Client) -> anyhow::Result<()>;
+    fn handle(&self, ctx: &InsertContext, pending: &mut Pending) -> Result<()>;
 }

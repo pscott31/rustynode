@@ -1,6 +1,6 @@
 use sha2::{Digest, Sha256};
 
-use crate::hex_id::HexID;
+use crate::entities::HexID;
 use crate::protos::vega;
 
 const NO_MARKET: &str = "!";

@@ -1,11 +1,8 @@
-use crate::hex_id::HexID;
+use crate::entities::HexID;
 use crate::protos::events;
 use crate::protos::events::bus_event::Event;
-
-use std::{
-    process,
-    time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::process;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub struct InsertContext {
     pub tx_hash: HexID,

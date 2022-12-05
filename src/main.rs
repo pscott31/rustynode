@@ -1,6 +1,7 @@
+mod entities;
 mod event_handlers;
-mod hex_id;
 mod inserter;
+mod pending;
 mod protos;
 mod utils;
 
@@ -52,11 +53,7 @@ fn main() -> Result<()> {
 
     delete_everything(&mut conn).context("unable to delete existing data")?;
 
-    let mut le_handler = event_handlers::ledger_movement::LedgerEventHandler::new();
-    let mut ae_handler = event_handlers::account::AccountEventHandler::new();
-    let rodger: &mut dyn event_handlers::EventHandler = &mut le_handler;
-    let handlers = &mut [rodger, &mut ae_handler];
-    let mut inserter = inserter::Inserter::new(conn, handlers);
+    let mut inserter = inserter::Inserter::new(conn);
 
     // let f = File::open("/home/scotty/work/testnet-2022-10-20.evt")?;
     let f = File::open("/Users/philipscott/Downloads/eventlog.evt")?;

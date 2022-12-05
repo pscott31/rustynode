@@ -1,23 +1,21 @@
+use super::pending::Pending;
 use crate::event_handlers::handler::EventHandler;
 use crate::event_handlers::InsertContext;
 use crate::events::bus_event::Event;
 use crate::protos::events;
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 
-pub struct Inserter<'a> {
+pub struct Inserter {
     pub conn: postgres::Client,
     ctx: InsertContext,
-    handlers: &'a mut [&'a mut dyn EventHandler],
+    pending: Pending,
 }
 
-impl Inserter<'_> {
-    pub fn new<'b>(
-        conn: postgres::Client,
-        handlers: &'b mut [&'b mut dyn EventHandler],
-    ) -> Inserter<'b> {
+impl Inserter {
+    pub fn new(conn: postgres::Client) -> Inserter {
         return Inserter {
             ctx: InsertContext::new(),
-            handlers: handlers,
+            pending: Pending::default(),
             conn: conn,
         };
     }
@@ -26,22 +24,17 @@ impl Inserter<'_> {
         self.ctx.update_from_event(be);
         match be.event.as_ref() {
             Option::Some(Event::TimeUpdate(_)) => self.flush()?,
-            Option::None => (),
+            Option::Some(Event::LedgerMovements(e)) => e.handle(&self.ctx, &mut self.pending)?,
+            Option::Some(Event::Account(e)) => e.handle(&self.ctx, &mut self.pending)?,
+
             _ => (),
         };
-
-        if let Some(event) = be.event.as_ref() {
-            for handler in self.handlers.iter_mut() {
-                handler.handle(&self.ctx, &mut self.conn, event)?;
-            }
-        }
         Ok(())
     }
 
     fn flush(&mut self) -> Result<()> {
-        for handler in self.handlers.iter_mut() {
-            handler.flush(&mut self.conn).context(format!("error flushing block changes to database"))?;
-        }
-        Ok(())
+        self.pending
+            .flush(&mut self.conn)
+            .context("writing block updates to db")
     }
 }

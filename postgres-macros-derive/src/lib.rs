@@ -79,13 +79,12 @@ fn impl_copy_in_macro(ast: &syn::DeriveInput) -> TokenStream {
     let gen = quote! {
         use postgres::types::ToSql;
         impl PgCopyIn for #name {
-            type Item<'a> = & 'a #name;
-            //fn copy_in<I>(items: I, conn: &mut postgres::Client) ->  Result<u64, postgres::Error>
-            // where I:IntoIterator,
-            // I::Item: Self::Item,
+            // type Item<'a> = & 'a #name;
+            // fn copy_in<'a, I>(items: I)
+            // where
+            //     I: IntoIterator<Item = &'a Self>,
             fn copy_in<'a, I>(items: I, conn: &mut postgres::Client) -> Result<u64, postgres::Error>
-    where
-        I: IntoIterator<Item = Self::Item<'a>>
+                where I: IntoIterator<Item = &'a Self>,
             {
                 let types = #name::types(conn);
                 let q = format!("COPY {}({}) FROM STDIN (FORMAT binary)", #table_name, #column_list);
