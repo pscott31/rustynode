@@ -26,7 +26,11 @@ impl Inserter {
             Option::Some(Event::TimeUpdate(_)) => self.flush()?,
             Option::Some(Event::LedgerMovements(e)) => e.handle(&self.ctx, &mut self.pending)?,
             Option::Some(Event::Account(e)) => e.handle(&self.ctx, &mut self.pending)?,
-
+            Option::Some(Event::Order(e)) => {
+                println!("arse");
+                e.handle(&self.ctx, &mut self.pending)
+                    .context("parsing order")?
+            }
             _ => (),
         };
         Ok(())

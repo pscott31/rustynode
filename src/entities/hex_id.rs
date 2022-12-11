@@ -8,12 +8,12 @@ pub struct HexID {
     data: [u8; 32],
 }
 
-// impl TryFrom<String> for HexID {
-//     type Error = anyhow::Error;
-//     fn try_from(s: &String) -> Result<Self> {
-//         hex_from(s)
-//     }
-// }
+impl TryFrom<&String> for HexID {
+    type Error = anyhow::Error;
+    fn try_from(s: &String) -> Result<Self> {
+        hex_from(s)
+    }
+}
 
 impl TryFrom<&str> for HexID {
     type Error = anyhow::Error;
@@ -28,8 +28,25 @@ impl From<[u8; 32]> for HexID {
     }
 }
 
-fn hex_from<T: AsRef<[u8]>>(s: T) -> Result<HexID> {
-    let mut v = hex::decode(s)?;
+fn hex_from(s: &str) -> Result<HexID> {
+    // fn hex_from<T: AsRef<[u8]>>(s: T) -> Result<HexID> {
+
+    let v = match s {
+        "VOTE" => "00",
+        "network" => "03",
+        "XYZalpha" => "04",
+        "XYZbeta" => "05",
+        "XYZdelta" => "06",
+        "XYZepsilon" => "07",
+        "XYZgamma" => "08",
+        "fBTC" => "09",
+        "fDAI" => "0a",
+        "fEURO" => "0b",
+        "fUSDC" => "0c",
+        _ => s,
+    };
+
+    let mut v = hex::decode(v)?;
     v.resize(32, 0);
     return Ok(HexID {
         data: v.try_into().unwrap(),

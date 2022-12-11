@@ -3,6 +3,7 @@ use crate::pending::HasKey;
 use postgres_macros::{PgCopyIn, PgTypes};
 use postgres_macros_derive::{PgCopyIn, PgTypes};
 use std::time::SystemTime;
+
 // Todo - postgres name for table so we can call this 'Balance'
 #[derive(Debug, PgTypes, PgCopyIn)]
 pub struct Balances {

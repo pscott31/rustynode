@@ -36,7 +36,7 @@ fn truncate_table(table_name: &str, conn: &mut postgres::Client) -> Result<()> {
     Ok(())
 }
 fn delete_everything(conn: &mut postgres::Client) -> Result<()> {
-    let tables = vec!["balances", "ledger"];
+    let tables = vec!["balances", "ledger", "accounts", "orders"];
     for table in tables {
         truncate_table(table, conn).context(format!("unable to truncate {}", table))?;
     }
